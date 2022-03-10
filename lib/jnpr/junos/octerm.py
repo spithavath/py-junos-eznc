@@ -55,18 +55,12 @@ class OCTerm(_Connection):
         self.results = dict(changed=False, failed=False, errmsg=None)
         self._hostname = "hostname"
         self._dev_uuid = uuid
-
-        # self._grpc_deps = kvargs.get("grpc_deps", {})
-        # self._grpc_conn_stub = self._grpc_deps.get("stub")
-        # self._grpc_meta_data = self._grpc_deps.get("meta_data", {})
-        # self._grpc_types_pb2 = self._grpc_deps.get("types_pb2")
-        # self._grpc_dcs_pb2 = self._grpc_deps.get("dcs_pb2")
-        # self._dev_uuid = self._grpc_deps.get("uuid")
-        # self._dev_info = self._grpc_deps.get("device_info")
-        # self._grpc_timeout = self._grpc_deps.get("grpc_timeout")
         self._producer = producer
         self._consumer = consumer
         self._id = id
+        self._request_topic = "oc-cmd-dev"
+        if "request_topic" in kvargs:
+            self._request_topic = kvargs["request_topic"]
 
         if self._producer is None or self._consumer is None:
             raise Exception("produce/consumer should be initialized")
@@ -172,7 +166,7 @@ class OCTerm(_Connection):
         }
         result = ""
         self._producer.produce(
-            "oc-cmd-dev", key="key", value=json.dumps(kafka_cmd))
+            self._request_topic, key="key", value=json.dumps(kafka_cmd))
         time_start = time.time()
         while True:
             if time.time() - time_start >= self.timeout:
