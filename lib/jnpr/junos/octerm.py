@@ -175,31 +175,48 @@ class OCTerm(_Connection):
                     error="Timeout waiting for response",
                     uuid=self._dev_uuid,
                 )
-            msg = self._consumer.poll(timeout=5)
-            if msg is None:
+            msg = self._consumer.poll(timeout_ms=5000)
+            if not msg or msg is None:
                 continue
-            if msg.error():
-                if msg.error().code() == KafkaError._PARTITION_EOF:
-                    # End of partition event
-                    continue
-                elif msg.error():
-                    raise KafkaException(msg.error())
             else:
-                self._consumer.commit(asynchronous=False)
-                resp = json.loads(msg.value())
-                if resp.get("requestID", "") == kafka_cmd["requestID"]:
-                    if "Payload" in resp and "Output" in resp["Payload"]:
-                        result = resp["Payload"]["Output"]
+                if msg.get("requestID", "") == kafka_cmd["requestID"]:
+                    if "Payload" in msg and "Output" in msg["Payload"]:
+                        result = msg["Payload"]["Output"]
                         break
                     else:
                         raise EzErrors.OCTermRpcError(
                             cmd=rpc_cmd,
-                            error=resp.get("Payload", {}).get(
+                            error=msg.get("Payload", {}).get(
                                 "Error", "Unknown error"),
                             uuid=self._dev_uuid,
                         )
                 else:
                     print("============")
+            # msg = self._consumer.poll(timeout=5)
+            # if msg is None:
+            #     continue
+            # if msg.error():
+            #     if msg.error().code() == KafkaError._PARTITION_EOF:
+            #         # End of partition event
+            #         continue
+            #     elif msg.error():
+            #         raise KafkaException(msg.error())
+            # else:
+            #     self._consumer.commit(asynchronous=False)
+            #     resp = json.loads(msg.value())
+            #     if resp.get("requestID", "") == kafka_cmd["requestID"]:
+            #         if "Payload" in resp and "Output" in resp["Payload"]:
+            #             result = resp["Payload"]["Output"]
+            #             break
+            #         else:
+            #             raise EzErrors.OCTermRpcError(
+            #                 cmd=rpc_cmd,
+            #                 error=resp.get("Payload", {}).get(
+            #                     "Error", "Unknown error"),
+            #                 uuid=self._dev_uuid,
+            #             )
+            #     else:
+            #         print("============")
 
         reply = RPCReply(result)
         errors = reply.errors
