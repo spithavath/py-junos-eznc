@@ -169,29 +169,34 @@ class OCTerm(_Connection):
             self._request_topic, key="key", value=json.dumps(kafka_cmd))
         time_start = time.time()
         while True:
+            result = None
             if time.time() - time_start >= self.timeout:
                 raise EzErrors.OCTermRpcError(
                     cmd=rpc_cmd,
                     error="Timeout waiting for response",
                     uuid=self._dev_uuid,
                 )
-            msg = self._consumer.poll(timeout_ms=5000)
-            if not msg or msg is None:
+            messages = self._consumer.poll(timeout_ms=5000)
+            if not messages or messages is None:
                 continue
             else:
-                if msg.get("requestID", "") == kafka_cmd["requestID"]:
-                    if "Payload" in msg and "Output" in msg["Payload"]:
-                        result = msg["Payload"]["Output"]
-                        break
-                    else:
-                        raise EzErrors.OCTermRpcError(
-                            cmd=rpc_cmd,
-                            error=msg.get("Payload", {}).get(
-                                "Error", "Unknown error"),
-                            uuid=self._dev_uuid,
-                        )
-                else:
-                    print("============")
+                for k, msg in messages.items():
+                    for a in msg:
+                        if a.value.get("requestID", "") == kafka_cmd["requestID"]:
+                            if "Payload" in a.value and "Output" in a.value["Payload"]:
+                                result = a.value["Payload"]["Output"]
+                                break
+                            else:
+                                raise EzErrors.OCTermRpcError(
+                                    cmd=rpc_cmd,
+                                    error=a.value.get("Payload", {}).get(
+                                        "Error", "Unknown error"),
+                                    uuid=self._dev_uuid,
+                                )
+                        else:
+                            print("============")
+            if result is not None:
+                break
             # msg = self._consumer.poll(timeout=5)
             # if msg is None:
             #     continue
