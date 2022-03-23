@@ -182,14 +182,18 @@ class OCTerm(_Connection):
             else:
                 for k, msg in messages.items():
                     for a in msg:
-                        if a.value.get("requestID", "") == kafka_cmd["requestID"]:
-                            if "Payload" in a.value and "Output" in a.value["Payload"]:
-                                result = a.value["Payload"]["Output"]
+                        try:
+                            value = json.loads(a.value.decode('utf-8'))
+                        except:
+                            continue
+                        if value.get("requestID", "") == kafka_cmd["requestID"]:
+                            if "Payload" in value and "Output" in value["Payload"]:
+                                result = value["Payload"]["Output"]
                                 break
                             else:
                                 raise EzErrors.OCTermRpcError(
                                     cmd=rpc_cmd,
-                                    error=a.value.get("Payload", {}).get(
+                                    error=value.get("Payload", {}).get(
                                         "Error", "Unknown error"),
                                     uuid=self._dev_uuid,
                                 )
