@@ -23,12 +23,13 @@ from jnpr.junos import jxml as JXML
 
 from jnpr.junos.decorators import ignoreWarnDecorator
 from confluent_kafka import  KafkaError, KafkaException
+from kafka import KafkaConsumer
 
 logger = logging.getLogger("jnpr.junos.octerm")
 
 
 class OCTerm(_Connection):
-    def __init__(self, uuid, producer, consumer, id, **kvargs):
+    def __init__(self, uuid, producer, id, **kvargs):
         """
         OCTerm object constructor.
 
@@ -56,14 +57,20 @@ class OCTerm(_Connection):
         self._hostname = "hostname"
         self._dev_uuid = uuid
         self._producer = producer
-        self._consumer = consumer
         self._id = id
         self._request_topic = "oc-cmd-dev"
         if "request_topic" in kvargs:
             self._request_topic = kvargs["request_topic"]
+        self._response_topic = "netconf-resp-dev"
+        if "response_topic" in kvargs:
+            self._response_topic = kvargs["response_topic"]
 
-        if self._producer is None or self._consumer is None:
-            raise Exception("produce/consumer should be initialized")
+        if "kafka_brokers" not in kvargs:
+            raise Exception("Kafka Brokers should be provided")
+        self._kafka_brokers = kvargs["kafka_brokers"]
+
+        if self._producer is None:
+            raise Exception("producer should be initialized")
 
         self.junos_dev_handler = JunosDeviceHandler(
             device_params={"name": "junos", "local": False}
@@ -165,18 +172,29 @@ class OCTerm(_Connection):
             "netconfCommand": rpc_cmd
         }
         result = ""
+
+        consumer = KafkaConsumer(
+            self._response_topic,
+            bootstrap_servers=self._kafka_brokers.split(","),
+            auto_offset_reset='latest',
+            enable_auto_commit=True,
+            group_id=None,
+            max_poll_interval_ms=5000,
+        )
         self._producer.produce(
             self._request_topic, key="key", value=json.dumps(kafka_cmd))
         time_start = time.time()
+
         while True:
             result = None
             if time.time() - time_start >= self.timeout:
+                consumer.close()
                 raise EzErrors.OCTermRpcError(
                     cmd=rpc_cmd,
                     error="Timeout waiting for response",
                     uuid=self._dev_uuid,
                 )
-            messages = self._consumer.poll(timeout_ms=5000)
+            messages = consumer.poll(timeout_ms=5000)
             if not messages or messages is None:
                 continue
             else:
@@ -191,6 +209,7 @@ class OCTerm(_Connection):
                                 result = value["Payload"]["Output"]
                                 break
                             else:
+                                consumer.close()
                                 raise EzErrors.OCTermRpcError(
                                     cmd=rpc_cmd,
                                     error=value.get("Payload", {}).get(
@@ -199,33 +218,11 @@ class OCTerm(_Connection):
                                 )
                         else:
                             print("============")
+                    if result is not None:
+                        break
             if result is not None:
                 break
-            # msg = self._consumer.poll(timeout=5)
-            # if msg is None:
-            #     continue
-            # if msg.error():
-            #     if msg.error().code() == KafkaError._PARTITION_EOF:
-            #         # End of partition event
-            #         continue
-            #     elif msg.error():
-            #         raise KafkaException(msg.error())
-            # else:
-            #     self._consumer.commit(asynchronous=False)
-            #     resp = json.loads(msg.value())
-            #     if resp.get("requestID", "") == kafka_cmd["requestID"]:
-            #         if "Payload" in resp and "Output" in resp["Payload"]:
-            #             result = resp["Payload"]["Output"]
-            #             break
-            #         else:
-            #             raise EzErrors.OCTermRpcError(
-            #                 cmd=rpc_cmd,
-            #                 error=resp.get("Payload", {}).get(
-            #                     "Error", "Unknown error"),
-            #                 uuid=self._dev_uuid,
-            #             )
-            #     else:
-            #         print("============")
+        consumer.close()
 
         reply = RPCReply(result)
         errors = reply.errors
