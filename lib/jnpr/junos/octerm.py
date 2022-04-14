@@ -29,7 +29,7 @@ logger = logging.getLogger("jnpr.junos.octerm")
 
 
 class OCTerm(_Connection):
-    def __init__(self, uuid, producer, id, **kvargs):
+    def __init__(self, uuid, producer, consumer, id, **kvargs):
         """
         OCTerm object constructor.
 
@@ -82,6 +82,8 @@ class OCTerm(_Connection):
         self._gather_facts = kvargs.get("gather_facts", False)
         self._fact_style = kvargs.get("fact_style", "new")
         self._use_filter = kvargs.get("use_filter", False)
+        self._consumer_lock = kvargs["consumer_lock"]
+        self._consumer = consumer
 
     @property
     def timeout(self):
@@ -173,56 +175,65 @@ class OCTerm(_Connection):
         }
         result = ""
 
-        consumer = KafkaConsumer(
-            self._response_topic,
-            bootstrap_servers=self._kafka_brokers.split(","),
-            auto_offset_reset='latest',
-            enable_auto_commit=True,
-            group_id=None,
-            max_poll_interval_ms=5000,
-        )
-        self._producer.produce(
-            self._request_topic, key="key", value=json.dumps(kafka_cmd))
-        time_start = time.time()
+        # consumer = KafkaConsumer(
+        #     self._response_topic,
+        #     bootstrap_servers=self._kafka_brokers.split(","),
+        #     auto_offset_reset='latest',
+        #     enable_auto_commit=True,
+        #     group_id=None,
+        #     max_poll_interval_ms=5000,
+        # )
+        try:
+            self._consumer_lock.acquire()
+            consumer = self._consumer
+            self._producer.produce(
+                self._request_topic, key="key", value=json.dumps(kafka_cmd))
+            time_start = time.time()
 
-        while True:
-            result = None
-            if time.time() - time_start >= self.timeout:
-                consumer.close()
-                raise EzErrors.OCTermRpcError(
-                    cmd=rpc_cmd,
-                    error="Timeout waiting for response",
-                    uuid=self._dev_uuid,
-                )
-            messages = consumer.poll(timeout_ms=5000)
-            if not messages or messages is None:
-                continue
-            else:
-                for k, msg in messages.items():
-                    for a in msg:
-                        try:
-                            value = json.loads(a.value.decode('utf-8'))
-                        except:
-                            continue
-                        if value.get("requestID", "") == kafka_cmd["requestID"]:
-                            if "Payload" in value and "Output" in value["Payload"]:
-                                result = value["Payload"]["Output"]
-                                break
+            while True:
+                result = None
+                if time.time() - time_start >= self.timeout:
+                    # consumer.close()
+                    self._consumer_lock.release()
+                    raise EzErrors.OCTermRpcError(
+                        cmd=rpc_cmd,
+                        error="Timeout waiting for response",
+                        uuid=self._dev_uuid,
+                    )
+                messages = consumer.poll(timeout_ms=5000)
+                if not messages or messages is None:
+                    continue
+                else:
+                    for k, msg in messages.items():
+                        for a in msg:
+                            try:
+                                value = json.loads(a.value.decode('utf-8'))
+                            except:
+                                continue
+                            if value.get("requestID", "") == kafka_cmd["requestID"]:
+                                if "Payload" in value and "Output" in value["Payload"]:
+                                    result = value["Payload"]["Output"]
+                                    break
+                                else:
+                                    # consumer.close()
+                                    self._consumer_lock.release()
+                                    raise EzErrors.OCTermRpcError(
+                                        cmd=rpc_cmd,
+                                        error=value.get("Payload", {}).get(
+                                            "Error", "Unknown error"),
+                                        uuid=self._dev_uuid,
+                                    )
                             else:
-                                consumer.close()
-                                raise EzErrors.OCTermRpcError(
-                                    cmd=rpc_cmd,
-                                    error=value.get("Payload", {}).get(
-                                        "Error", "Unknown error"),
-                                    uuid=self._dev_uuid,
-                                )
-                        else:
-                            print("============")
-                    if result is not None:
-                        break
-            if result is not None:
-                break
-        consumer.close()
+                                print("============")
+                        if result is not None:
+                            break
+                if result is not None:
+                    break
+            # consumer.close()
+            self._consumer_lock.release()
+        except Exception as exp:
+            self._consumer_lock.release()
+            raise exp
 
         reply = RPCReply(result)
         errors = reply.errors
