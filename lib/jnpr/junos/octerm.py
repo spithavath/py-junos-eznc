@@ -22,7 +22,7 @@ from jnpr.junos import exception as EzErrors
 from jnpr.junos import jxml as JXML
 
 from jnpr.junos.decorators import ignoreWarnDecorator
-from confluent_kafka import  KafkaError, KafkaException
+# from confluent_kafka import  KafkaError, KafkaException
 from kafka import KafkaConsumer
 
 logger = logging.getLogger("jnpr.junos.octerm")
@@ -70,7 +70,7 @@ class OCTerm(_Connection):
         self._kafka_brokers = kvargs["kafka_brokers"]
 
         if self._producer is None:
-            raise Exception("producer should be initialized")
+            raise Exception("Producer should be initialized")
 
         self.junos_dev_handler = JunosDeviceHandler(
             device_params={"name": "junos", "local": False}
@@ -175,54 +175,41 @@ class OCTerm(_Connection):
         }
         result = ""
 
-        # consumer = KafkaConsumer(
-        #     self._response_topic,
-        #     bootstrap_servers=self._kafka_brokers.split(","),
-        #     auto_offset_reset='latest',
-        #     enable_auto_commit=True,
-        #     group_id=None,
-        #     max_poll_interval_ms=5000,
-        # )
-        try:
-            self._consumer_lock.acquire()
-            consumer = self._consumer
-            self._producer.produce(
-                self._request_topic, key="key", value=json.dumps(kafka_cmd))
-            time_start = time.time()
+        consumer = KafkaConsumer(
+            self._response_topic,
+            bootstrap_servers=self._kafka_brokers.split(","),
+            auto_offset_reset='latest',
+            enable_auto_commit=True,
+            group_id=None,
+            max_poll_interval_ms=5000,
+        )
+        self._producer.produce(
+            self._request_topic, key="key", value=json.dumps(kafka_cmd))
+        time_start = time.time()
 
-            while True:
-                result = None
-                if time.time() - time_start >= self.timeout:
-                    # consumer.close()
-                    self._consumer_lock.release()
-                    raise EzErrors.OCTermRpcError(
-                        cmd=rpc_cmd,
-                        error="Timeout waiting for response",
-                        uuid=self._dev_uuid,
-                    )
-                messages = consumer.poll(timeout_ms=5000)
-                if not messages or messages is None:
-                    continue
-                else:
-                    for k, msg in messages.items():
-                        for a in msg:
-                            try:
-                                value = json.loads(a.value.decode('utf-8'))
-                            except:
-                                continue
-                            if value.get("requestID", "") == kafka_cmd["requestID"]:
-                                if "Payload" in value and "Output" in value["Payload"]:
-                                    result = value["Payload"]["Output"]
-                                    break
-                                else:
-                                    # consumer.close()
-                                    self._consumer_lock.release()
-                                    raise EzErrors.OCTermRpcError(
-                                        cmd=rpc_cmd,
-                                        error=value.get("Payload", {}).get(
-                                            "Error", "Unknown error"),
-                                        uuid=self._dev_uuid,
-                                    )
+        while True:
+            result = None
+            if time.time() - time_start >= self.timeout:
+                consumer.close()
+                raise EzErrors.OCTermRpcError(
+                    cmd=rpc_cmd,
+                    error="Timeout waiting for response",
+                    uuid=self._dev_uuid,
+                )
+            messages = consumer.poll(timeout_ms=5000)
+            if not messages or messages is None:
+                continue
+            else:
+                for k, msg in messages.items():
+                    for a in msg:
+                        try:
+                            value = json.loads(a.value.decode('utf-8'))
+                        except Exception:
+                            continue
+                        if value.get("requestID", "") == kafka_cmd["requestID"]:
+                            if "Payload" in value and "Output" in value["Payload"]:
+                                result = value["Payload"]["Output"]
+                                break
                             else:
                                 print("============")
                         if result is not None:
