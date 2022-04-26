@@ -175,6 +175,15 @@ class OCTerm(_Connection):
         }
         result = ""
 
+        self._producer.produce(
+            self._request_topic, key="key", value=json.dumps(kafka_cmd))
+
+        raise EzErrors.OCTermProducer(
+            cmd=rpc_cmd,
+            error="message published to kafka",
+            uuid=self._dev_uuid,
+        )
+        """
         consumer = KafkaConsumer(
             self._response_topic,
             bootstrap_servers=self._kafka_brokers.split(","),
@@ -211,6 +220,7 @@ class OCTerm(_Connection):
                                 result = value["Payload"]["Output"]
                                 break
                             else:
+<<<<<<< HEAD
                                 print("============")
                         if result is not None:
                             break
@@ -233,6 +243,23 @@ class OCTerm(_Connection):
             reply, self.junos_dev_handler.transform_reply()
         )._NCElement__doc
         return rpc_rsp_e
+=======
+                                consumer.close()
+                                raise EzErrors.OCTermRpcError(
+                                    cmd=rpc_cmd,
+                                    error=value.get("Payload", {}).get(
+                                        "Error", "Unknown error"),
+                                    uuid=self._dev_uuid,
+                                )
+                        else:
+                            print("============")
+                    if result is not None:
+                        break
+            if result is not None:
+                break
+        consumer.close()
+        """
+>>>>>>> bd12533... Kafka Produce
 
     # -----------------------------------------------------------------------
     # Context Manager

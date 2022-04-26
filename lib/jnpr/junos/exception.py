@@ -384,3 +384,18 @@ class OCTermRpcError(RpcError):
         return "error: '{}'".format(self.error)
 
     __str__ = __repr__
+
+
+class OCTermProducer(RpcError):
+    """
+    Generated if message is published to kafka topic
+    """
+
+    def __init__(self, cmd, error, uuid=None):
+        self.uuid = uuid
+        RpcError.__init__(self, cmd=cmd, errs=error)
+
+    def __repr__(self):
+        return "error: '{}'".format(self.error)
+
+    __str__ = __repr__
