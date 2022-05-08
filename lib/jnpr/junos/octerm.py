@@ -3,6 +3,7 @@ This file defines the 'OCTerm' class.
 This has the functionality to communicate to oc-terminator of JCloud over kafka
 """
 import json
+import re
 import sys
 import logging
 
@@ -29,7 +30,8 @@ logger = logging.getLogger("jnpr.junos.octerm")
 
 
 class OCTerm(_Connection):
-    def __init__(self, uuid, producer, consumer, id, **kvargs):
+    # TODO:
+    def __init__(self, uuid=None, producer=None, id=None, **kvargs):
         """
         OCTerm object constructor.
 
@@ -49,7 +51,6 @@ class OCTerm(_Connection):
         # ----------------------------------------
         # setup instance connection/open variables
         # ----------------------------------------
-
         self._tty = None
         self._ofacts = {}
         self.connected = False
@@ -58,19 +59,24 @@ class OCTerm(_Connection):
         self._dev_uuid = uuid
         self._producer = producer
         self._id = id
-        self._request_topic = "oc-cmd-dev"
-        if "request_topic" in kvargs:
-            self._request_topic = kvargs["request_topic"]
-        self._response_topic = "netconf-resp-dev"
-        if "response_topic" in kvargs:
-            self._response_topic = kvargs["response_topic"]
 
-        if "kafka_brokers" not in kvargs:
-            raise Exception("Kafka Brokers should be provided")
-        self._kafka_brokers = kvargs["kafka_brokers"]
+        if kvargs.get("result"):
+            logger.info('Creating oc-term class for consumer')
+            self.kafka_result = kvargs["result"]
+        else:
+            self._request_topic = "oc-cmd-dev"
+            if "request_topic" in kvargs:
+                self._request_topic = kvargs["request_topic"]
+            self._response_topic = "netconf-resp-dev"
+            if "response_topic" in kvargs:
+                self._response_topic = kvargs["response_topic"]
 
-        if self._producer is None:
-            raise Exception("Producer should be initialized")
+            if "kafka_brokers" not in kvargs:
+                raise Exception("Kafka Brokers should be provided")
+            self._kafka_brokers = kvargs["kafka_brokers"]
+            if self._producer is None:
+                raise Exception("Producer should be initialized")
+            self.kafka_result = None
 
         self.junos_dev_handler = JunosDeviceHandler(
             device_params={"name": "junos", "local": False}
@@ -84,6 +90,8 @@ class OCTerm(_Connection):
         self._use_filter = kvargs.get("use_filter", False)
         self._consumer_lock = kvargs["consumer_lock"]
         self._consumer = consumer
+        self._async_consumer = kvargs.get("async_consumer", True)
+        self._table_metadata = kvargs.get("t_metadata", None)
 
     @property
     def timeout(self):
@@ -156,6 +164,20 @@ class OCTerm(_Connection):
 
     @ignoreWarnDecorator
     def _rpc_reply(self, rpc_cmd_e, *args, **kwargs):
+        if self.kafka_result:
+            result = self.kafka_result
+            reply = RPCReply(result)
+            errors = reply.errors
+            if len(errors) > 1:
+                raise RPCError(to_ele(reply._raw), errs=errors)
+            elif len(errors) == 1:
+                raise reply.error
+
+            rpc_rsp_e = NCElement(
+                reply, self.junos_dev_handler.transform_reply()
+            )._NCElement__doc
+            return rpc_rsp_e
+
         encode = None if sys.version < "3" else "unicode"
 
         rpc_cmd = (
@@ -164,10 +186,16 @@ class OCTerm(_Connection):
             else rpc_cmd_e
         )
         rpc_cmd.encode("unicode_escape")
+        if self._async_consumer:
+            table_name = self._table_metadata
+            req_id = self._dev_uuid + ":" + ":" + \
+                table_name + ":" + self._id + str(time.time())
+        else:
+            req_id = self._dev_uuid + ":" + rpc_cmd + ":" + self._id + str(time.time())
         kafka_cmd = {
             "op": "OC_COMMAND",
             "command": "netconf-rpc",
-            "requestID": self._dev_uuid + ":" + rpc_cmd + ":" + self._id + str(time.time()),
+            "requestID": req_id,
             "resource": self._dev_uuid,
             "id": self._dev_uuid,
             "params": rpc_cmd,
@@ -175,15 +203,6 @@ class OCTerm(_Connection):
         }
         result = ""
 
-        self._producer.produce(
-            self._request_topic, key="key", value=json.dumps(kafka_cmd))
-
-        raise EzErrors.OCTermProducer(
-            cmd=rpc_cmd,
-            error="message published to kafka",
-            uuid=self._dev_uuid,
-        )
-        """
         consumer = KafkaConsumer(
             self._response_topic,
             bootstrap_servers=self._kafka_brokers.split(","),
@@ -192,9 +211,17 @@ class OCTerm(_Connection):
             group_id=None,
             max_poll_interval_ms=5000,
         )
+
         self._producer.produce(
             self._request_topic, key="key", value=json.dumps(kafka_cmd))
         time_start = time.time()
+
+        if self._async_consumer:
+            raise EzErrors.OCTermProducer(
+                cmd=rpc_cmd,
+                error="message published to kafka",
+                uuid=self._dev_uuid,
+            )
 
         while True:
             result = None
@@ -207,6 +234,7 @@ class OCTerm(_Connection):
                 )
             messages = consumer.poll(timeout_ms=5000)
             if not messages or messages is None:
+                logger.info("No messages response from kafka topic")
                 continue
             else:
                 for k, msg in messages.items():
@@ -258,8 +286,23 @@ class OCTerm(_Connection):
             if result is not None:
                 break
         consumer.close()
+<<<<<<< HEAD
         """
 >>>>>>> bd12533... Kafka Produce
+=======
+        reply = RPCReply(result)
+        errors = reply.errors
+        if len(errors) > 1:
+            raise RPCError(to_ele(reply._raw), errs=errors)
+        elif len(errors) == 1:
+            raise reply.error
+
+        rpc_rsp_e = NCElement(
+            reply, self.junos_dev_handler.transform_reply()
+        )._NCElement__doc
+        return rpc_rsp_e
+
+>>>>>>> a7dcccf... seperate consumer
 
     # -----------------------------------------------------------------------
     # Context Manager

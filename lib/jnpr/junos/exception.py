@@ -392,6 +392,7 @@ class OCTermProducer(RpcError):
     """
 
     def __init__(self, cmd, error, uuid=None):
+        self.error = error
         self.uuid = uuid
         RpcError.__init__(self, cmd=cmd, errs=error)
 

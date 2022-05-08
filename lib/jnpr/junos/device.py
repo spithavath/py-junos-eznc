@@ -854,6 +854,9 @@ class _Connection(object):
             raise EzErrors.RpcError(cmd=rpc_cmd_e, rsp=rsp, errs=ex)
         # Something unexpected happened - raise it up
         except Exception as err:
+            # TODO:
+            if isinstance(err, EzErrors.OCTermProducer):
+                raise err
             warnings.warn(
                 "An unknown exception occurred - please report.", RuntimeWarning
             )
