@@ -203,52 +203,63 @@ class OCTerm(_Connection):
         }
         result = ""
 
-        consumer = KafkaConsumer(
-            self._response_topic,
-            bootstrap_servers=self._kafka_brokers.split(","),
-            auto_offset_reset='latest',
-            enable_auto_commit=True,
-            group_id=None,
-            max_poll_interval_ms=5000,
-        )
+        # consumer = KafkaConsumer(
+        #     self._response_topic,
+        #     bootstrap_servers=self._kafka_brokers.split(","),
+        #     auto_offset_reset='latest',
+        #     enable_auto_commit=True,
+        #     group_id=None,
+        #     max_poll_interval_ms=5000,
+        # )
+        try:
+            self._consumer_lock.acquire()
+            consumer = self._consumer
+            self._producer.produce(
+                self._request_topic, key="key", value=json.dumps(kafka_cmd))
+            time_start = time.time()
 
-        self._producer.produce(
-            self._request_topic, key="key", value=json.dumps(kafka_cmd))
-        time_start = time.time()
-
-        if self._async_consumer:
-            raise EzErrors.OCTermProducer(
-                cmd=rpc_cmd,
-                error="message published to kafka",
-                uuid=self._dev_uuid,
-            )
-
-        while True:
-            result = None
-            if time.time() - time_start >= self.timeout:
-                consumer.close()
-                raise EzErrors.OCTermRpcError(
+            if self._async_consumer:
+                # Async consumer enabled. Return immediately.
+                raise EzErrors.OCTermProducer(
                     cmd=rpc_cmd,
-                    error="Timeout waiting for response",
+                    error="message published to kafka",
                     uuid=self._dev_uuid,
                 )
-            messages = consumer.poll(timeout_ms=5000)
-            if not messages or messages is None:
-                logger.info("No messages response from kafka topic")
-                continue
-            else:
-                for k, msg in messages.items():
-                    for a in msg:
-                        try:
-                            value = json.loads(a.value.decode('utf-8'))
-                        except Exception:
-                            continue
-                        if value.get("requestID", "") == kafka_cmd["requestID"]:
-                            if "Payload" in value and "Output" in value["Payload"]:
-                                result = value["Payload"]["Output"]
-                                break
+
+            while True:
+                result = None
+                if time.time() - time_start >= self.timeout:
+                    consumer.close()
+                    raise EzErrors.OCTermRpcError(
+                        cmd=rpc_cmd,
+                        error="Timeout waiting for response",
+                        uuid=self._dev_uuid,
+                    )
+                messages = consumer.poll(timeout_ms=5000)
+                if not messages or messages is None:
+                    logger.info("No messages response from kafka topic")
+                    continue
+                else:
+                    for k, msg in messages.items():
+                        for a in msg:
+                            try:
+                                value = json.loads(a.value.decode('utf-8'))
+                            except Exception:
+                                continue
+                            if value.get("requestID", "") == kafka_cmd["requestID"]:
+                                if "Payload" in value and "Output" in value["Payload"]:
+                                    result = value["Payload"]["Output"]
+                                    break
+                                else:
+                                    # consumer.close()
+                                    self._consumer_lock.release()
+                                    raise EzErrors.OCTermRpcError(
+                                        cmd=rpc_cmd,
+                                        error=value.get("Payload", {}).get(
+                                            "Error", "Unknown error"),
+                                        uuid=self._dev_uuid,
+                                    )
                             else:
-<<<<<<< HEAD
                                 print("============")
                         if result is not None:
                             break
@@ -271,38 +282,6 @@ class OCTerm(_Connection):
             reply, self.junos_dev_handler.transform_reply()
         )._NCElement__doc
         return rpc_rsp_e
-=======
-                                consumer.close()
-                                raise EzErrors.OCTermRpcError(
-                                    cmd=rpc_cmd,
-                                    error=value.get("Payload", {}).get(
-                                        "Error", "Unknown error"),
-                                    uuid=self._dev_uuid,
-                                )
-                        else:
-                            print("============")
-                    if result is not None:
-                        break
-            if result is not None:
-                break
-        consumer.close()
-<<<<<<< HEAD
-        """
->>>>>>> bd12533... Kafka Produce
-=======
-        reply = RPCReply(result)
-        errors = reply.errors
-        if len(errors) > 1:
-            raise RPCError(to_ele(reply._raw), errs=errors)
-        elif len(errors) == 1:
-            raise reply.error
-
-        rpc_rsp_e = NCElement(
-            reply, self.junos_dev_handler.transform_reply()
-        )._NCElement__doc
-        return rpc_rsp_e
-
->>>>>>> a7dcccf... seperate consumer
 
     # -----------------------------------------------------------------------
     # Context Manager
