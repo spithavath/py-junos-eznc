@@ -76,6 +76,12 @@ class OCTerm(_Connection):
             self._kafka_brokers = kvargs["kafka_brokers"]
             if self._producer is None:
                 raise Exception("Producer should be initialized")
+            if not self._async_consumer:
+                self._consumer_lock = kvargs["consumer_lock"]
+                self._consumer = consumer
+            else:
+                self._consumer_lock = None
+                self._consumer = None
             self.kafka_result = None
 
         self.junos_dev_handler = JunosDeviceHandler(
@@ -89,12 +95,6 @@ class OCTerm(_Connection):
         self._fact_style = kvargs.get("fact_style", "new")
         self._use_filter = kvargs.get("use_filter", False)
         self._async_consumer = kvargs.get("async_consumer", True)
-        if not self._async_consumer:
-            self._consumer_lock = kvargs["consumer_lock"]
-            self._consumer = consumer
-        else:
-            self._consumer_lock = None
-            self._consumer = None
         self._table_metadata = kvargs.get("t_metadata", None)
 
     @property
