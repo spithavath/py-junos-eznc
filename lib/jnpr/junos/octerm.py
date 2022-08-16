@@ -31,7 +31,7 @@ logger = logging.getLogger("jnpr.junos.octerm")
 
 class OCTerm(_Connection):
     # TODO:
-    def __init__(self, uuid=None, producer=None, id=None, **kvargs):
+    def __init__(self, uuid=None, producer=None, consumer=None, id=None, **kvargs):
         """
         OCTerm object constructor.
 
@@ -88,9 +88,13 @@ class OCTerm(_Connection):
         self._gather_facts = kvargs.get("gather_facts", False)
         self._fact_style = kvargs.get("fact_style", "new")
         self._use_filter = kvargs.get("use_filter", False)
-        self._consumer_lock = kvargs["consumer_lock"]
-        self._consumer = consumer
         self._async_consumer = kvargs.get("async_consumer", True)
+        if not self._async_consumer:
+            self._consumer_lock = kvargs["consumer_lock"]
+            self._consumer = consumer
+        else:
+            self._consumer_lock = None
+            self._consumer = None
         self._table_metadata = kvargs.get("t_metadata", None)
 
     @property
@@ -162,6 +166,14 @@ class OCTerm(_Connection):
         # self._grpc_conn_stub.DisconnectDevice(metadata=self._grpc_meta_data)
         self.connected = False
 
+    def acquire_consume_lock(self):
+        if not self._async_consumer:
+            self._consumer_lock.acquire()
+
+    def release_consume_lock(self):
+        if not self._async_consumer:
+            self._consumer_lock.release()
+
     @ignoreWarnDecorator
     def _rpc_reply(self, rpc_cmd_e, *args, **kwargs):
         if self.kafka_result:
@@ -212,8 +224,8 @@ class OCTerm(_Connection):
         #     max_poll_interval_ms=5000,
         # )
         try:
-            self._consumer_lock.acquire()
-            consumer = self._consumer
+            self.acquire_consume_lock()
+            
             self._producer.produce(
                 self._request_topic, key="key", value=json.dumps(kafka_cmd))
             time_start = time.time()
@@ -225,11 +237,12 @@ class OCTerm(_Connection):
                     error="message published to kafka",
                     uuid=self._dev_uuid,
                 )
+            else:
+                consumer = self._consumer
 
             while True:
                 result = None
                 if time.time() - time_start >= self.timeout:
-                    consumer.close()
                     raise EzErrors.OCTermRpcError(
                         cmd=rpc_cmd,
                         error="Timeout waiting for response",
@@ -265,10 +278,9 @@ class OCTerm(_Connection):
                             break
                 if result is not None:
                     break
-            # consumer.close()
-            self._consumer_lock.release()
+            self.release_consume_lock()
         except Exception as exp:
-            self._consumer_lock.release()
+            self.release_consume_lock()
             raise exp
 
         reply = RPCReply(result)
