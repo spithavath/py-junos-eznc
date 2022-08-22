@@ -59,6 +59,7 @@ class OCTerm(_Connection):
         self._dev_uuid = uuid
         self._producer = producer
         self._id = id
+        self._async_consumer = kvargs.get("async_consumer", True)
 
         if kvargs.get("result"):
             logger.info('Creating oc-term class for consumer')
@@ -94,7 +95,6 @@ class OCTerm(_Connection):
         self._gather_facts = kvargs.get("gather_facts", False)
         self._fact_style = kvargs.get("fact_style", "new")
         self._use_filter = kvargs.get("use_filter", False)
-        self._async_consumer = kvargs.get("async_consumer", True)
         self._table_metadata = kvargs.get("t_metadata", None)
 
     @property
@@ -200,8 +200,8 @@ class OCTerm(_Connection):
         rpc_cmd.encode("unicode_escape")
         if self._async_consumer:
             table_name = self._table_metadata
-            req_id = self._dev_uuid + ":" + ":" + \
-                table_name + ":" + self._id + str(time.time())
+            req_id = "pyezsched" + ":" + ":" + self._id + ":" + \
+                table_name + ":" + str(time.time())
         else:
             req_id = self._dev_uuid + ":" + rpc_cmd + ":" + self._id + str(time.time())
         kafka_cmd = {
