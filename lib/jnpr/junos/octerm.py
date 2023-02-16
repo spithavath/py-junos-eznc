@@ -60,7 +60,8 @@ class OCTerm(_Connection):
         self._producer = producer
         self._id = id
         self._async_consumer = kvargs.get("async_consumer", True)
-
+        self._xslt = kvargs.get("xslt", "") 
+        
         if kvargs.get("result"):
             logger.info('Creating oc-term class for consumer')
             self.kafka_result = kvargs["result"]
@@ -213,8 +214,15 @@ class OCTerm(_Connection):
             "params": rpc_cmd,
             "netconfCommand": rpc_cmd
         }
+        
+        if self._xslt != "":
+            kafka_cmd["params"] = {
+                "netconfCommand" : rpc_cmd,
+                "filterXSLT": self._xslt
+            }
+        
         result = ""
-
+        
         # consumer = KafkaConsumer(
         #     self._response_topic,
         #     bootstrap_servers=self._kafka_brokers.split(","),
