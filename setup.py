@@ -24,7 +24,7 @@ setup(
         "jnpr.junos.cfgro": ["*.yml"],
         "jnpr.junos.resources": ["*.yml"],
     },
-    python_requires=">=3.*, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*",
+    python_requires=">=3.5, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*",
     install_requires=install_reqs,
     classifiers=[
         "Development Status :: 5 - Production/Stable",
@@ -39,6 +39,7 @@ setup(
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
         "Topic :: Software Development :: Libraries",
         "Topic :: Software Development :: Libraries :: Application Frameworks",
         "Topic :: Software Development :: Libraries :: Python Modules",

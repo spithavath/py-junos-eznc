@@ -5,6 +5,7 @@ from jnpr.junos.utils.ssh_client import open_ssh_client
 import subprocess
 import six
 from threading import Thread
+import time
 
 _JUNOS_PROMPT = "> "
 _SHELL_PROMPT = r"(%|#|\$)\s"
@@ -42,9 +43,8 @@ class StartShell(object):
         self.shell_type = shell_type
 
     def write_stdin(self, stdin, data):
-        while True:
-            stdin.write(six.b(data))
-            stdin.flush()
+        stdin.write(data.encode("utf-8"))
+        stdin.flush()
 
     def wait_for(self, this=_SHELL_PROMPT, timeout=0, sleep=0):
         """
@@ -77,6 +77,8 @@ class StartShell(object):
                 rd, wr, err = select([chan], [], [], _SELECT_WAIT)
                 if rd:
                     data = chan.recv(_RECVSZ)
+                else:
+                    continue
             if sleep:
                 time.sleep(sleep)
             if isinstance(data, bytes):
@@ -95,7 +97,7 @@ class StartShell(object):
         """
         if self.ON_JUNOS is True:
             data += " && echo ']]>]]>' \n"
-            self._chan.stdin.write(data)
+            self._chan.stdin.write(data.encode("utf-8"))
             self.t = Thread(target=self.write_stdin, args=(self._chan.stdin, data))
             self.t.daemon = True  # thread dies with the program
             self.t.start()
@@ -125,7 +127,7 @@ class StartShell(object):
 
             got = self.wait_for(r"(%|>|#|\$)")
             if got[-1].endswith(_JUNOS_PROMPT):
-                self.send("start shell" + self.shell_type)
+                self.send("start shell " + self.shell_type)
                 self.wait_for(_SHELL_PROMPT)
 
     def close(self):
