@@ -10,7 +10,7 @@ from lxml import etree
 import json
 
 # local
-from jnpr.junos.exception import RpcError
+from jnpr.junos.exception import RpcError, RpcTimeoutError
 from jnpr.junos.utils.start_shell import StartShell
 from jnpr.junos.factory.state_machine import StateMachine
 from jnpr.junos.factory.to_json import TableJSONEncoder
@@ -148,7 +148,11 @@ class CMDTable(object):
                         # </rpc-reply>
                         # hence need to do cleanup
                         self.data = self.data.replace("GOT: ", "")
-                except RpcError:
+                except RpcTimeoutError as exc:
+                    logger.error(f"RPC timedout, cmd: {self.GET_CMD}, target: {self.TARGET}, details: {exc}")
+                    raise exc
+                except RpcError as exc:
+                    logger.error(f"RPC errored falling to SSH, cmd: {self.GET_CMD}, target: {self.TARGET}, details: {exc}")
                     with StartShell(self.D) as ss:
                         ret = ss.run(
                             'cprod -A %s -c "%s"' % (self.TARGET, self.GET_CMD)
