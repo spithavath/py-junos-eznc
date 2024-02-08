@@ -64,3 +64,9 @@ desktop.ini
 
 # PyCharm
 .idea
+
+#pyenv
+.python-version
+
+#VSCode Python Path
+.env

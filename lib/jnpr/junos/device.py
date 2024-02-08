@@ -854,6 +854,9 @@ class _Connection(object):
             raise EzErrors.RpcError(cmd=rpc_cmd_e, rsp=rsp, errs=ex)
         # Something unexpected happened - raise it up
         except Exception as err:
+            # TODO:
+            if isinstance(err, EzErrors.OCTermProducer):
+                raise err
             warnings.warn(
                 "An unknown exception occurred - please report.", RuntimeWarning
             )
@@ -1104,7 +1107,20 @@ class Device(_Connection):
     # -----------------------------------------------------------------------
 
     def __new__(cls, *args, **kwargs):
-        if (
+        if kwargs.get("mode") == "grpc":
+            if "grpc_deps" not in kwargs:
+                raise ValueError
+            from jnpr.junos.dcs import DCS
+
+            instance = object.__new__(DCS, *args, **kwargs)
+            instance.__init__(**kwargs)
+            return instance
+        elif kwargs.get("mode") == "oc-term":
+            from jnpr.junos.octerm import OCTerm
+            instance = object.__new__(OCTerm, *args, **kwargs)
+            instance.__init__(**kwargs)
+            return instance
+        elif (
             kwargs.get("port") in [23, "23"]
             or kwargs.get("mode")
             or kwargs.get("cs_user") is not None

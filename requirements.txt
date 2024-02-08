@@ -10,3 +10,4 @@ pyserial
 yamlordereddictloader
 pyparsing
 transitions
+confluent-kafka==1.8.2
